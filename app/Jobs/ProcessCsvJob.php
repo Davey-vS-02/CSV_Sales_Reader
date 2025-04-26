@@ -2,12 +2,15 @@
 
 namespace App\Jobs;
 
+use App\Models\InvalidSale;
+use App\Models\Sale;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log; //For debugging, remember to remove on cleanup.
 
 class ProcessCsvJob implements ShouldQueue
@@ -29,6 +32,16 @@ class ProcessCsvJob implements ShouldQueue
         //Open the file.
         $file = Storage::path($this->path);
 
+        //Remove BOM chars screwing with STORE header.
+        $fileContent = file_get_contents($file);
+        $fileContent = preg_replace('/^\xEF\xBB\xBF/', '', $fileContent);
+        file_put_contents($file, $fileContent);
+
+        //Error column and message variables:
+        $errorColumn = '';
+        $errorMessage = '';
+
+
         //Count the number of rows to determine progress of loading bar.
         $rowCount = 0;
         if (($handle = fopen($file, 'r')) !== false) {
@@ -41,26 +54,33 @@ class ProcessCsvJob implements ShouldQueue
 
         //Open for reading.
         if(($handle = fopen($file, 'r')) !== false) {
-            $header = null;
+            $headers = null;
 
             //Parse each csv row as an array, check if there are rows to parse.
             while(($row = fgetcsv($handle, 1000, ',')) !== false) {
                 //Set the first row to the header.
-                if(!$header) {
-                    $header = $row;
+                if(!$headers) {
+                    $headers = $row;
+                    // echo "Headers: ";
+                    // foreach ($headers as $header) {
+                    //     //Log::info("[" . $header . "]\n");
+                    // }
                     continue; //Skip tyo next row.
                 }
 
                 //Map header columns to values.
-                $data = array_combine($header, $row);
+                $data = array_combine($headers, $row);
+
+                // Call the function and destructure the returned array into variables
+                list($isValid, $errorColumn, $errorMessage) = $this->isValidRow($data);
 
                 //Validate the row.
-                if($this->isValidRow($data)) {
+                if($isValid) {
                     //Save to sales records.
                     $this->saveValidRecord($data);                    
                 } else {
                     //Save to invalid sales records.
-                    $this->saveInvalidRecord($data);                    
+                    $this->saveInvalidRecord($data, $errorColumn, $errorMessage);                    
                 }
 
                 //Update progress tracking here.
@@ -75,63 +95,127 @@ class ProcessCsvJob implements ShouldQueue
     {
         $orderNum = $data['ORDER #'];
         echo $orderNum;
-        //Check if all values are not null.
-        if(in_array(null, $data, true)) {
-            //Row contains at least one empty field.
-            echo "\033[31mInvalid row found! Null value!\033[0m";
-            return false;
+        $tableNames = ['STORE', 'STORE CODE', 'DATE', 'ORDER #', 'RECEIPT#', 'AMOUNT OF RECEIPTS', 'BALANCE OUTSTANDING', 'DELIVERY DATE', 'COMM YES/NO', 'PRODUCT CODE', 'HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE', 'COLOR', 'DIRECT Y/N', 'PHOTO grnte/prpxs', 'WALL INCLUDED'];
+
+        //Check for empty or null fields. Comments not included.
+        foreach($tableNames as $tableName) {
+            if($data[$tableName] === null || $data[$tableName] == '') {
+                return [false, $tableName, "Non nullable value is null or empty."];
+            }
         }
 
-        //Check if values are contained in enums.
-        if(!in_array($data['COMM YES/NO'], ['YES', 'NO'])) {
-            echo "\033[31mInvalid row found! Value not in COMM enum!\033[0m";
-            return false;
+        //Check where delivery date is Canceled or N/A.
+        if(in_array($data['DELIVERY DATE'], ['CANCELED', 'N/A'])) {
+            return [false, 'DELIVERY DATE', "Order is canceled or date is N/A."];
         }
 
-        if(!in_array($data['HEAD+BASE'], ['X', 'N/A'])) {
-            echo "\033[31mInvalid row found! Value not in H+B enum!\033[0m";
-            return false;
+        //Loop for checking yes/no enums.
+        //COMM YES/NO, DIRECT Y/N, WALL INCLUDED.
+        $yesNoEnumTables = ['COMM YES/NO', 'DIRECT Y/N', 'WALL INCLUDED'];
+
+        foreach($yesNoEnumTables as $tableName)
+        {
+            if(!in_array($data[$tableName], ['YES', 'NO'])) {
+                return [false, $tableName, "Value not yes or no!"];
+            }
         }
 
-        if(!in_array($data['HEAD+BASE + FRAME'], ['X', 'N/A'])) {
-            echo "\033[31mInvalid row found! Value not in H+B+F enum!\033[0m";
-            return false;
-        }
+        //Loop for checking X,N/A enums.
+        //HEAD+BASE, HEAD+BASE + FRAME, COMPLETE
+        $xNAEnumTables = ['HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE'];
 
-        if(!in_array($data['COMPLETE'], ['X', 'N/A'])) {
-            echo "\033[31mInvalid row found! Value not in COMPLETE enum!\033[0m";
-            return false;
-        }
-
-        if(!in_array($data['DIRECT Y/N'], ['YES', 'NO'])) {
-            echo "\033[31mInvalid row found! Value not in DIRECT enum!\033[0m";
-            return false;
+        foreach($xNAEnumTables as $tableName)
+        {
+            if(!in_array($data[$tableName], ['X', 'N/A'])) {
+                return [false, $tableName, "Value not X or N/A!"];
+            }
         }
 
         if(!in_array($data['PHOTO grnte/prpxs'], ['NO', 'G', 'P'])) {
-            echo "\033[31mInvalid row found! Value not in PHOTO enum!\033[0m";
-            return false;
+            return [false, 'PHOTO grnte/prpxs', "Value does not match NO, G or P."];
         }
 
-        if(!in_array($data['WALL INCLUDED'], ['YES', 'NO'])) {
-            echo "\033[31mInvalid row found! Value not in WALL enum!\033[0m";
-            return false;
-        }        
+        // Validate date format
+        try {
+            Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
+        } 
+        catch (\Exception $e) {
+            return [false, 'DATE', "Date format incorrect."]; // Invalidate row if date format is incorrect
+        }
+
+        try {
+            Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
+        } 
+        catch (\Exception $e) {
+            //echo "Invalid date format for DELIVERY DATE: " . $data['DELIVERY DATE'] . "\n";
+            return [false, 'DELIVERYDATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
+        }
 
         //If no validation has failed, pass the validation.
-        echo "\033[32mValid row found yeah.\033[0m";
-        return true;
+        return [true, '', ''];
     }
 
     protected function saveValidRecord(array $data)
     {
         //Insert into sales table
-        //SalesRecord::create($data);
+
+        //Correct date format from y-m-d to d/m/y.
+        $date = Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
+        $deliveryDate = Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
+
+        //echo $data['STORE'];
+
+        //Map all fields from CSV to their respective names used in the db table.
+        $mappedData = [
+            'store' => $data['STORE'],
+            'store_code' => $data['STORE CODE'],
+            'date' => $date,
+            'order_num' => $data['ORDER #'],
+            'receipt_num' => $data['RECEIPT#'],
+            'receipt_count' => $data['AMOUNT OF RECEIPTS'],
+            'balance_outstanding' => $data['BALANCE OUTSTANDING'],
+            'delivery_date' => $deliveryDate,
+            'commission_earned' => $data['COMM YES/NO'],
+            'product_code' => $data['PRODUCT CODE'],
+            'head_base_included' => $data['HEAD+BASE'],
+            'head_base_frame_included' => $data['HEAD+BASE + FRAME'],
+            'completion_status' => $data['COMPLETE'],
+            'product_color' => $data['COLOR'],
+            'direct' => $data['DIRECT Y/N'],
+            'photo' => $data['PHOTO grnte/prpxs'],
+            'wall_included' => $data['WALL INCLUDED'],
+            'comments' => $data['COMMENTS']
+        ];
+
+        Sale::create($mappedData);
+        
     }
 
-    protected function saveInvalidRecord(array $data)
+    protected function saveInvalidRecord(array $data, string $errorColumn, string $errorMessage)
     {
-        //Insert into your invalid records table
-        //InvalidSalesRecord::create(['row_data' => json_encode($data)]);
+        $mappedData = [
+            'store' => $data['STORE'],
+            'store_code' => $data['STORE CODE'],
+            'date' => $data['DATE'],
+            'order_num' => $data['ORDER #'],
+            'receipt_num' => $data['RECEIPT#'],
+            'receipt_count' => $data['AMOUNT OF RECEIPTS'],
+            'balance_outstanding' => $data['BALANCE OUTSTANDING'],
+            'delivery_date' => $data['DELIVERY DATE'],
+            'commission_earned' => $data['COMM YES/NO'],
+            'product_code' => $data['PRODUCT CODE'],
+            'head_base_included' => $data['HEAD+BASE'],
+            'head_base_frame_included' => $data['HEAD+BASE + FRAME'],
+            'completion_status' => $data['COMPLETE'],
+            'product_color' => $data['COLOR'],
+            'direct' => $data['DIRECT Y/N'],
+            'photo' => $data['PHOTO grnte/prpxs'],
+            'wall_included' => $data['WALL INCLUDED'],
+            'comments' => $data['COMMENTS'],
+            'error_column' => $errorColumn,
+            'error_message' => $errorMessage
+        ];
+
+        InvalidSale::create($mappedData);
     }
 }
