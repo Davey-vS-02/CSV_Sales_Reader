@@ -93,9 +93,28 @@ class ProcessCsvJob implements ShouldQueue
 
     protected function isValidRow(array $data)
     {
-        $orderNum = $data['ORDER #'];
-        echo $orderNum;
-        $tableNames = ['STORE', 'STORE CODE', 'DATE', 'ORDER #', 'RECEIPT#', 'AMOUNT OF RECEIPTS', 'BALANCE OUTSTANDING', 'DELIVERY DATE', 'COMM YES/NO', 'PRODUCT CODE', 'HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE', 'COLOR', 'DIRECT Y/N', 'PHOTO grnte/prpxs', 'WALL INCLUDED'];
+        //To track on what row validation failed.
+        //$orderNum = $data['ORDER #'];
+        //echo $orderNum;
+
+        //All tables that can not be null or empty:
+        $tableNames = [
+            'STORE', 
+            'STORE CODE', 
+            'DATE', 'ORDER #', 
+            'RECEIPT#', 
+            'AMOUNT OF RECEIPTS', 
+            'BALANCE OUTSTANDING', 
+            'DELIVERY DATE', 
+            'COMM YES/NO', 
+            'PRODUCT CODE', 
+            'HEAD+BASE', 
+            'HEAD+BASE + FRAME', 
+            'COMPLETE', 'COLOR', 
+            'DIRECT Y/N', 
+            'PHOTO grnte/prpxs', 
+            'WALL INCLUDED'
+        ];
 
         //Check for empty or null fields. Comments not included.
         foreach($tableNames as $tableName) {
@@ -112,7 +131,6 @@ class ProcessCsvJob implements ShouldQueue
         //Loop for checking yes/no enums.
         //COMM YES/NO, DIRECT Y/N, WALL INCLUDED.
         $yesNoEnumTables = ['COMM YES/NO', 'DIRECT Y/N', 'WALL INCLUDED'];
-
         foreach($yesNoEnumTables as $tableName)
         {
             if(!in_array($data[$tableName], ['YES', 'NO'])) {
@@ -123,47 +141,45 @@ class ProcessCsvJob implements ShouldQueue
         //Loop for checking X,N/A enums.
         //HEAD+BASE, HEAD+BASE + FRAME, COMPLETE
         $xNAEnumTables = ['HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE'];
-
-        foreach($xNAEnumTables as $tableName)
-        {
+        foreach($xNAEnumTables as $tableName) {
             if(!in_array($data[$tableName], ['X', 'N/A'])) {
                 return [false, $tableName, "Value not X or N/A!"];
             }
         }
 
+        //Check if values are contained in NO, G, P enum.
         if(!in_array($data['PHOTO grnte/prpxs'], ['NO', 'G', 'P'])) {
             return [false, 'PHOTO grnte/prpxs', "Value does not match NO, G or P."];
         }
 
-        // Validate date format
+        //Validate date format, if error is caught, date is not in a date format: like 18/0624 instead of 18/06/24.
         try {
             Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
         } 
         catch (\Exception $e) {
             return [false, 'DATE', "Date format incorrect."]; // Invalidate row if date format is incorrect
         }
-
         try {
             Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
         } 
         catch (\Exception $e) {
-            //echo "Invalid date format for DELIVERY DATE: " . $data['DELIVERY DATE'] . "\n";
             return [false, 'DELIVERYDATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
         }
 
-        //If no validation has failed, pass the validation.
+        //If no validation has failed, pass the validation and return an empty error message and column.
         return [true, '', ''];
     }
 
     protected function saveValidRecord(array $data)
     {
-        //Insert into sales table
+        //Insert values into sales table in db.
 
         //Correct date format from y-m-d to d/m/y.
         $date = Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
         $deliveryDate = Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
 
         //echo $data['STORE'];
+        //['STORE'] is an undefined array key. Please investigate.
 
         //Map all fields from CSV to their respective names used in the db table.
         $mappedData = [
@@ -186,9 +202,8 @@ class ProcessCsvJob implements ShouldQueue
             'wall_included' => $data['WALL INCLUDED'],
             'comments' => $data['COMMENTS']
         ];
-
+        //Create db entry through Sale model.
         Sale::create($mappedData);
-        
     }
 
     protected function saveInvalidRecord(array $data, string $errorColumn, string $errorMessage)
@@ -215,7 +230,7 @@ class ProcessCsvJob implements ShouldQueue
             'error_column' => $errorColumn,
             'error_message' => $errorMessage
         ];
-
+        //Create db entry through InvalidSale model.
         InvalidSale::create($mappedData);
     }
 }
