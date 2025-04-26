@@ -22,11 +22,13 @@ class CsvUploadController extends Controller
 
         //CSV file gets stored under storage/app/private/uploads. Path to file is stored in $path.
         $path = $request->file('csv_file')->store('uploads');
+        $fileName = basename( $path ); //Returns the trailing name of a path.
 
         // Dispatch job here.
         ProcessCsvJob::dispatch($path);
 
         //Success message to display after file upload and validation is successful.
-        return redirect()->back()->with('status', 'File uploaded successfully!');
+        return redirect()->back()->with('status', 'File uploaded successfully! Currently processing!')
+        ->with('filename', $fileName);
     }
 }

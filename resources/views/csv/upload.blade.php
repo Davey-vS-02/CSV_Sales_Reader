@@ -46,15 +46,32 @@
         position: absolute;
         left: 50%;
         transform: translate(-50%);
-        border-radius: 1vh
+        border-radius: 1vh;
     }
     .successMessage
     {
         color: green;
         position: absolute;
         left: 50%;
-        top: 30%;;
+        top: 30%;
         transform: translate(-50%);
+    }
+    #progressContainer
+    {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 50px;    
+        width: 100%;       
+    }
+    progress
+    {
+        margin-top: 10px;
     }
 </style>
 <body>
@@ -82,5 +99,48 @@
         <br><br>
         <button type="submit">Upload</button>
     </form>
+
+    <!-- Loading Bar -->
+    <div id="progressContainer" style="display:;">
+        <progress id="progressBar" max="100" value="0"></progress>
+    <div id="progressText">0% complete</div>
+
+    {{-- Javascript to animate loading bar. --}}
+    <script>
+        // Retrieve the filename from the session
+        let fileName = "{{ session('filename') }}";
+
+        if (fileName) {
+            // Function to fetch and update the progress
+            function updateProgress() {
+                fetch(`/csv-progress/${fileName}`)
+                .then(response => response.json())
+                .then(data => {
+                    let progress = Math.round((data.current / data.total) * 100);
+                    let valid = data.valid;
+                    let invalid = data.invalid;
+
+                    // Update progress bar
+                    let progressBar = document.getElementById("progressBar");
+                    let progressText = document.getElementById("progressText");
+                    let successMessage = document.getElementById("successMessage");
+
+                    progressBar.value = progress;
+                    progressText.innerText = `${progress}% complete (Valid: ${valid}, Invalid: ${invalid})`;
+
+                    // Check if the progress is complete and hide the progress bar if done
+                    if (progress === 100) {
+                        clearInterval(progressInterval); // Stop the interval when complete
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching progress:', error);
+                });
+            }
+
+            // Update progress every 2 seconds
+            let progressInterval = setInterval(updateProgress, 200);
+        }
+    </script>
 </body>
 </html>

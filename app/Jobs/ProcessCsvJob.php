@@ -1,5 +1,7 @@
 <?php
 
+//Remember to modularize all validation function to simplifiy unit test logic.
+
 namespace App\Jobs;
 
 use App\Models\CsvProcessingJob;
@@ -12,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log; //For debugging, remember to remove on cleanup.
 
 class ProcessCsvJob implements ShouldQueue
@@ -30,30 +33,31 @@ class ProcessCsvJob implements ShouldQueue
     //Execute the job.
     public function handle()
     {
+        echo "Path: $this->path"; //Output: (Path: uploads/JpDWH9kPSqIVuQFR1n3rsU8bA0aO76nKQPwy72fX.csv)
         //Open the file.
         $file = Storage::path($this->path);
+
+        //Remove 'uploads/' prefix from the path.
+        $fileName = str_replace('uploads/', '', $this->path);
+        echo "Trimmed path: $fileName";
 
         //Remove BOM chars screwing with STORE header.
         $fileContent = file_get_contents($file);
         $fileContent = preg_replace('/^\xEF\xBB\xBF/', '', $fileContent);
         file_put_contents($file, $fileContent);
 
-        //Error column and message variables:
-        $errorColumn = '';
-        $errorMessage = '';
-
-
         //Count the number of rows to determine progress of loading bar.
-        $rowCount = 0;
+        $totalRowCount = -1; //-1 for taking into account headers.
         if (($handle = fopen($file, 'r')) !== false) {
             while (($data = fgetcsv($handle, 1000, ',')) !== false) {
-                $rowCount++;
+                $totalRowCount++;
             }
             fclose($handle);
         }
 
         $validCount = 0;
         $invalidCount = 0;
+        $currentRowCount = 0;
 
         //Open for reading.
         if(($handle = fopen($file, 'r')) !== false) {
@@ -64,33 +68,47 @@ class ProcessCsvJob implements ShouldQueue
                 //Set the first row to the header.
                 if(!$headers) {
                     $headers = $row;
-                    // echo "Headers: ";
-                    // foreach ($headers as $header) {
-                    //     //Log::info("[" . $header . "]\n");
-                    // }
-                    continue; //Skip tyo next row.
+                    continue; //Skip to next row.
                 }
 
                 //Map header columns to values.
                 $data = array_combine($headers, $row);
 
-                // Call the function and destructure the returned array into variables
+                //Call the function and destructure the returned array into variables
                 list($isValid, $errorColumn, $errorMessage) = $this->isValidRow($data);
 
                 //Validate the row.
                 if($isValid) {
                     //Save to sales records.
+                    $currentRowCount++;
                     $validCount++;
                     $this->saveValidRecord($data);                    
                 } else {
                     //Save to invalid sales records.
+                    $currentRowCount++;
                     $invalidCount++;
                     $this->saveInvalidRecord($data, $errorColumn, $errorMessage);                    
                 }
 
-                //Update progress tracking here.
-                //Possibly use cache to save progress and animate progress bar.
+                //Use cache to save row progress for loading bar.
+                //Update progress in cache every 10 rows.
+                if ($currentRowCount % 10 === 0) {
+                    Cache::put("csv_progress_$fileName", [
+                    'current' => $currentRowCount,
+                    'total' => $totalRowCount,  
+                    'valid' => $validCount,
+                    'invalid' => $invalidCount,
+                    ], now()->addMinutes(5)); //Expires after 5 minutes.
+                }
             }
+
+            //When processing completes, currentRowCount will be equal to $rowCount. Cache one more time so loading bar can finish.
+            Cache::put("csv_progress_$fileName", [
+            'current' => $currentRowCount,
+            'total' => $totalRowCount,  
+            'valid' => $validCount,
+            'invalid' => $invalidCount,
+            ], now()->addMinutes(5));
 
             //Log new csv file entry into database.
             $tableMap = [
