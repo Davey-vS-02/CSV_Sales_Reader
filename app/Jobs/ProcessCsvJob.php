@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\CsvProcessingJob;
 use App\Models\InvalidSale;
 use App\Models\Sale;
 use Illuminate\Bus\Queueable;
@@ -51,6 +52,8 @@ class ProcessCsvJob implements ShouldQueue
             fclose($handle);
         }
 
+        $validCount = 0;
+        $invalidCount = 0;
 
         //Open for reading.
         if(($handle = fopen($file, 'r')) !== false) {
@@ -77,9 +80,11 @@ class ProcessCsvJob implements ShouldQueue
                 //Validate the row.
                 if($isValid) {
                     //Save to sales records.
+                    $validCount++;
                     $this->saveValidRecord($data);                    
                 } else {
                     //Save to invalid sales records.
+                    $invalidCount++;
                     $this->saveInvalidRecord($data, $errorColumn, $errorMessage);                    
                 }
 
@@ -87,6 +92,16 @@ class ProcessCsvJob implements ShouldQueue
                 //Possibly use cache to save progress and animate progress bar.
             }
 
+            //Log new csv file entry into database.
+            $tableMap = [
+                'csv_file_path' => $file,
+                'valid_row_count' => $validCount,
+                'invalid_row_count' => $invalidCount
+            ];
+
+            CsvProcessingJob::create($tableMap);
+
+            //Close csv file.
             fclose($handle);
         }
     }
