@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessCsvJob;
 use Illuminate\Http\Request;
 
 class CsvUploadController extends Controller
@@ -19,13 +20,13 @@ class CsvUploadController extends Controller
             'csv_file' => 'required|file|mimes:csv', //Can add max file size here: |max:10240 (10MB)
         ]);
 
-        //CSV file gets stores under storage/app/private/uploads. Get's with a unique hashed name.
+        //CSV file gets stored under storage/app/private/uploads. Path to file is stored in $path.
         $path = $request->file('csv_file')->store('uploads');
 
         // Dispatch job here.
-        // ProcessCsvJob::dispatch($path);
+        ProcessCsvJob::dispatch($path);
 
-        //Success message to display after file upload is successful.
+        //Success message to display after file upload and validation is successful.
         return redirect()->back()->with('status', 'File uploaded successfully!');
     }
 }
