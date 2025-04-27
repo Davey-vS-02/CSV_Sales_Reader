@@ -15,7 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log; //For debugging, remember to remove on cleanup.
+//use Illuminate\Support\Facades\Log; //For debugging, remember to remove on cleanup.
 
 class ProcessCsvJob implements ShouldQueue
 {
@@ -93,22 +93,12 @@ class ProcessCsvJob implements ShouldQueue
                 //Use cache to save row progress for loading bar.
                 //Update progress in cache every 10 rows.
                 if ($currentRowCount % 10 === 0) {
-                    Cache::put("csv_progress_$fileName", [
-                    'current' => $currentRowCount,
-                    'total' => $totalRowCount,  
-                    'valid' => $validCount,
-                    'invalid' => $invalidCount,
-                    ], now()->addMinutes(5)); //Expires after 5 minutes.
+                    $this->cacheProgress($fileName, $currentRowCount, $totalRowCount, $validCount, $invalidCount);
                 }
             }
 
-            //When processing completes, currentRowCount will be equal to $rowCount. Cache one more time so loading bar can finish.
-            Cache::put("csv_progress_$fileName", [
-            'current' => $currentRowCount,
-            'total' => $totalRowCount,  
-            'valid' => $validCount,
-            'invalid' => $invalidCount,
-            ], now()->addMinutes(5));
+            //When processing completes, $currentRowCount will be equal to $rowCount. Cache one more time so loading bar can finish.
+            $this->cacheProgress($fileName, $currentRowCount, $totalRowCount, $validCount, $invalidCount);
 
             //Log new csv file entry into database.
             $tableMap = [
@@ -161,18 +151,20 @@ class ProcessCsvJob implements ShouldQueue
         //COMM YES/NO, DIRECT Y/N, WALL INCLUDED.
         $yesNoEnumTables = ['COMM YES/NO', 'DIRECT Y/N', 'WALL INCLUDED'];
         $yesNoEnum = ['YES', 'NO'];
-        if ($this->enumValidation($data, $yesNoEnumTables, $yesNoEnum, 'Value not yes or no!')[0] == false)
-        {
-            return $this->enumValidation($data, $yesNoEnumTables, $yesNoEnum, 'Value not yes or no!');
+        //Memoize answer instead of running twice.
+        list($valid, $errorCol, $errorMsg) = $this->enumValidation($data, $yesNoEnumTables, $yesNoEnum, 'Value not yes or no!');
+        if(!$valid) {
+            return [$valid, $errorCol, $errorMsg];
         }
 
         //Loop for checking X,N/A enums.
         //HEAD+BASE, HEAD+BASE + FRAME, COMPLETE
         $xNAEnumTables = ['HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE'];
         $xNAEnum = ['X', 'N/A'];
-        if($this->enumValidation($data, $xNAEnumTables, $xNAEnum, 'Value not X or N/A!')[0] == false)
-        {
-            return $this->enumValidation($data, $xNAEnumTables, $xNAEnum, 'Value not X or N/A!');
+        //Memoize again.
+        list($valid, $errorCol, $errorMsg) = $this->enumValidation($data, $xNAEnumTables, $xNAEnum, 'Value not X or N/A!');
+        if(!$valid) {
+            return [$valid, $errorCol, $errorMsg];
         }
 
         //Check if values are contained in NO, G, P enum.
@@ -186,7 +178,7 @@ class ProcessCsvJob implements ShouldQueue
             return [false, 'DELIVERY DATE', "Order is canceled."];
         }
 
-        //Check if date value is N/A, this is just aan empty date.
+        //Check if date value is N/A, this is just an empty date.
         if($data['DELIVERY DATE'] != 'N/A')
         {
             //Validate date format, if error is caught, date is not in a date format: like 18/0624 instead of 18/06/24.
@@ -200,7 +192,7 @@ class ProcessCsvJob implements ShouldQueue
                 Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
             } 
             catch (\Exception $e) {
-                return [false, 'DELIVERYDATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
+                return [false, 'DELIVERY DATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
             }
         }
 
@@ -289,5 +281,15 @@ class ProcessCsvJob implements ShouldQueue
             }
         }
         return [true,'', ''];
+    }
+
+    protected function cacheProgress($fileName, $currentRowCount, $totalRowCount, $validCount, $invalidCount): void
+    {
+        Cache::put("csv_progress_$fileName", [
+            'current' => $currentRowCount,
+            'total' => $totalRowCount,  
+            'valid' => $validCount,
+            'invalid' => $invalidCount,
+        ], now()->addMinutes(5));
     }
 }
