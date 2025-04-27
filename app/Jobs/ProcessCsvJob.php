@@ -117,6 +117,7 @@ class ProcessCsvJob implements ShouldQueue
                 'invalid_row_count' => $invalidCount
             ];
 
+            //Create db entry into csv_processing_jobs.
             CsvProcessingJob::create($tableMap);
 
             //Close csv file.
@@ -156,9 +157,9 @@ class ProcessCsvJob implements ShouldQueue
             }
         }
 
-        //Check where delivery date is Canceled or N/A.
-        if(in_array($data['DELIVERY DATE'], ['CANCELED', 'N/A'])) {
-            return [false, 'DELIVERY DATE', "Order is canceled or date is N/A."];
+        //Check where delivery date is Canceled.
+        if($data['DELIVERY DATE'] == 'CANCELED') {
+            return [false, 'DELIVERY DATE', "Order is canceled."];
         }
 
         //Loop for checking yes/no enums.
@@ -209,7 +210,13 @@ class ProcessCsvJob implements ShouldQueue
 
         //Correct date format from y-m-d to d/m/y.
         $date = Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
-        $deliveryDate = Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
+        if($data['DELIVERY DATE'] == 'N/A')
+        {
+            $deliveryDate = null;
+        }
+        else {
+            $deliveryDate = Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
+        }
 
         //echo $data['STORE'];
         //['STORE'] is an undefined array key. Please investigate.

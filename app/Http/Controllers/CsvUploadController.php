@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessCsvJob;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CsvUploadController extends Controller
 {
@@ -27,8 +28,17 @@ class CsvUploadController extends Controller
         // Dispatch job here.
         ProcessCsvJob::dispatch($path);
 
-        //Success message to display after file upload and validation is successful.
+        //Success message to display after file upload is successful.
         return redirect()->back()->with('status', 'File uploaded successfully! Currently processing!')
         ->with('filename', $fileName);
+    }
+
+    public function showInvalidRows($filename)
+    {
+        //Get invalid records from db.
+        $invalidRows = DB::table('invalid_sales')->get();
+
+        //Return view where invalid records will be displayed.
+        return view('csv.invalid', compact('invalidRows'));
     }
 }

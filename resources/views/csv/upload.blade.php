@@ -87,6 +87,11 @@
             color: green;
             display: none;
         }
+
+        .invalidRowsButton
+        {
+            display: none;
+        }
     </style>
     <body>
         <h1>Upload a CSV File</h1>
@@ -123,6 +128,10 @@
             CSV file has been validated and is saved to the database.
         </h4>
 
+        @if(session('filename'))
+            <a href="{{ route('csv.invalid', ['filename' => session('filename')]) }}" class="invalidRowsButton">View Invalid Rows</a>
+        @endif
+
         {{-- Javascript to animate loading bar. --}}
         <script>
             // Retrieve the filename from the session
@@ -144,6 +153,7 @@
                         let progressText = document.getElementById("progressText");
                         let successMessage = document.getElementsByClassName("successMessage")[0];
                         let validationSuccess = document.getElementsByClassName("uploadedNotification")[0];
+                        let invalidRowsLink = document.getElementsByClassName("invalidRowsButton")[0];
 
                         progressContainer.style.display = 'flex';
 
@@ -156,6 +166,7 @@
                             //progressContainer.style.display = 'none';
                             successMessage.style.display = 'none';
                             validationSuccess.style.display = 'flex';
+                            invalidRowsLink.style.display = 'flex';
                         }
                     })
                     .catch(error => {

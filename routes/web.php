@@ -15,3 +15,4 @@ Route::fallback(function () {
 
 Route::get('/csv-progress/{path}', [CsvProgressController::class, 'getProgress']);
 
+Route::get('/csv-invalid/{filename}', [CsvUploadController::class, 'showInvalidRows'])->name('csv.invalid');

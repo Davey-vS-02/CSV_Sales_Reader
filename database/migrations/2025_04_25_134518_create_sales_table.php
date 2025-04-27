@@ -20,7 +20,7 @@ return new class extends Migration
             $table->integer('receipt_num');
             $table->integer('receipt_count');
             $table->integer('balance_outstanding');
-            $table->date('delivery_date');
+            $table->date('delivery_date')->nullable();
             $table->enum('commission_earned', ['YES', 'NO', 'CANCELED'])->default('NO');
             $table->string('product_code');
             $table->enum('head_base_included', ['N/A', 'NO ENTRY', 'X', 'CANCELED'])->default('N/A');
