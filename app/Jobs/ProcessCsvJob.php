@@ -130,8 +130,7 @@ class ProcessCsvJob implements ShouldQueue
         //To track on what row validation failed.
         //$orderNum = $data['ORDER #'];
         //echo $orderNum;
-
-        //All tables that can not be null or empty:
+        
         $tableNames = [
             'STORE', 
             'STORE CODE', 
@@ -155,11 +154,6 @@ class ProcessCsvJob implements ShouldQueue
             if($data[$tableName] === null || $data[$tableName] == '') {
                 return [false, $tableName, "Non nullable value is null or empty."];
             }
-        }
-
-        //Check where delivery date is Canceled.
-        if($data['DELIVERY DATE'] == 'CANCELED') {
-            return [false, 'DELIVERY DATE', "Order is canceled."];
         }
 
         //Loop for checking yes/no enums.
@@ -186,18 +180,27 @@ class ProcessCsvJob implements ShouldQueue
             return [false, 'PHOTO grnte/prpxs', "Value does not match NO, G or P."];
         }
 
-        //Validate date format, if error is caught, date is not in a date format: like 18/0624 instead of 18/06/24.
-        try {
-            Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
-        } 
-        catch (\Exception $e) {
-            return [false, 'DATE', "Date format incorrect."]; // Invalidate row if date format is incorrect
+        //Check where delivery date is Canceled.
+        if($data['DELIVERY DATE'] == 'CANCELED') {
+            return [false, 'DELIVERY DATE', "Order is canceled."];
         }
-        try {
-            Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
-        } 
-        catch (\Exception $e) {
-            return [false, 'DELIVERYDATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
+
+        //Check if date value is N/A, this is just aan empty date.
+        if($data['DELIVERY DATE'] != 'N/A')
+        {
+            //Validate date format, if error is caught, date is not in a date format: like 18/0624 instead of 18/06/24.
+            try {
+                Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
+            } 
+            catch (\Exception $e) {
+                return [false, 'DATE', "Date format incorrect."]; // Invalidate row if date format is incorrect
+            }
+            try {
+                Carbon::createFromFormat('d/m/y', $data['DELIVERY DATE'])->format('Y-m-d');
+            } 
+            catch (\Exception $e) {
+                return [false, 'DELIVERYDATE', "Date format incorrect."]; // Invalidate row if delivery date format is incorrect
+            }
         }
 
         //If no validation has failed, pass the validation and return an empty error message and column.
@@ -206,7 +209,9 @@ class ProcessCsvJob implements ShouldQueue
 
     protected function saveValidRecord(array $data)
     {
-        //Insert values into sales table in db.
+        /////////////////////////////////////////
+        //Insert values into sales table in db.//
+        /////////////////////////////////////////
 
         //Correct date format from y-m-d to d/m/y.
         $date = Carbon::createFromFormat('d/m/y', $data['DATE'])->format('Y-m-d');
