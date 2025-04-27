@@ -125,12 +125,13 @@ class ProcessCsvJob implements ShouldQueue
         }
     }
 
-    protected function isValidRow(array $data)
+    public function isValidRow(array $data)
     {
         //To track on what row validation failed.
         //$orderNum = $data['ORDER #'];
         //echo $orderNum;
         
+        //All rows that are non nullable in csv. Some can be null in db.
         $tableNames = [
             'STORE', 
             'STORE CODE', 
@@ -151,7 +152,7 @@ class ProcessCsvJob implements ShouldQueue
 
         //Check for empty or null fields. Comments not included.
         foreach($tableNames as $tableName) {
-            if($data[$tableName] === null || $data[$tableName] == '') {
+            if($data[$tableName] === null || $data[$tableName] === '') {
                 return [false, $tableName, "Non nullable value is null or empty."];
             }
         }
@@ -159,20 +160,19 @@ class ProcessCsvJob implements ShouldQueue
         //Loop for checking yes/no enums.
         //COMM YES/NO, DIRECT Y/N, WALL INCLUDED.
         $yesNoEnumTables = ['COMM YES/NO', 'DIRECT Y/N', 'WALL INCLUDED'];
-        foreach($yesNoEnumTables as $tableName)
+        $yesNoEnum = ['YES', 'NO'];
+        if ($this->enumValidation($data, $yesNoEnumTables, $yesNoEnum, 'Value not yes or no!')[0] == false)
         {
-            if(!in_array($data[$tableName], ['YES', 'NO'])) {
-                return [false, $tableName, "Value not yes or no!"];
-            }
+            return $this->enumValidation($data, $yesNoEnumTables, $yesNoEnum, 'Value not yes or no!');
         }
 
         //Loop for checking X,N/A enums.
         //HEAD+BASE, HEAD+BASE + FRAME, COMPLETE
         $xNAEnumTables = ['HEAD+BASE', 'HEAD+BASE + FRAME', 'COMPLETE'];
-        foreach($xNAEnumTables as $tableName) {
-            if(!in_array($data[$tableName], ['X', 'N/A'])) {
-                return [false, $tableName, "Value not X or N/A!"];
-            }
+        $xNAEnum = ['X', 'N/A'];
+        if($this->enumValidation($data, $xNAEnumTables, $xNAEnum, 'Value not X or N/A!')[0] == false)
+        {
+            return $this->enumValidation($data, $xNAEnumTables, $xNAEnum, 'Value not X or N/A!');
         }
 
         //Check if values are contained in NO, G, P enum.
@@ -180,8 +180,9 @@ class ProcessCsvJob implements ShouldQueue
             return [false, 'PHOTO grnte/prpxs', "Value does not match NO, G or P."];
         }
 
-        //Check where delivery date is Canceled.
-        if($data['DELIVERY DATE'] == 'CANCELED') {
+        //Check where delivery date is canceled.
+        //Check for al spellings of canceled.
+        if(strtoupper($data['DELIVERY DATE']) == 'CANCELED' || strtoupper($data['DELIVERY DATE']) == 'CANCELLED') {
             return [false, 'DELIVERY DATE', "Order is canceled."];
         }
 
@@ -277,5 +278,16 @@ class ProcessCsvJob implements ShouldQueue
         ];
         //Create db entry through InvalidSale model.
         InvalidSale::create($mappedData);
+    }
+
+    protected function enumValidation(array $data, array $tableNames, array $enumValues, string $errorMessage): array
+    {
+        foreach($tableNames as $tableName)
+        {
+            if(!in_array($data[$tableName], $enumValues)) {
+                return [false, $tableName, $errorMessage];
+            }
+        }
+        return [true,'', ''];
     }
 }

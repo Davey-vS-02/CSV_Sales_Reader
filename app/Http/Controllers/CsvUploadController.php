@@ -21,6 +21,9 @@ class CsvUploadController extends Controller
             'csv_file' => 'required|file|mimes:csv', //Can add max file size here: |max:10240 (10MB)
         ]);
 
+        //Clear invalid records table to ensure records shown are newest.
+        \DB::table('invalid_sales')->truncate();
+
         //CSV file gets stored under storage/app/private/uploads. Path to file is stored in $path.
         $path = $request->file('csv_file')->store('uploads');
         $fileName = basename( $path ); //Returns the trailing name of a path.

@@ -91,6 +91,7 @@
         .invalidRowsButton
         {
             display: none;
+            color: white;
         }
     </style>
     <body>
@@ -158,7 +159,8 @@
                         progressContainer.style.display = 'flex';
 
                         progressBar.value = progress;
-                        progressText.innerText = `${progress}% complete (Valid: ${valid}, Invalid: ${invalid})`;
+                        currentTotal = invalid + valid;
+                        progressText.innerText = `${progress}% complete (Valid: ${valid}, Invalid: ${invalid}) Total processed records: ${currentTotal}`;
 
                         // Check if the progress is complete and hide the progress bar if done
                         if (progress === 100) {
