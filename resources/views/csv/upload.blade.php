@@ -40,6 +40,7 @@
         {
             background: rgb(107, 107, 107);
             color: white;
+            transform: translate(-50%) scale(1.04);
         }
 
         input

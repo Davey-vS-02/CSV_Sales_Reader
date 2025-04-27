@@ -14,17 +14,18 @@ class CsvProgressController extends Controller
      * @return \Illuminate\Http\JsonResponse
      */
 
+     //Gets upload/validation progress from cache and sends it to data endpoint as JSON.
      public function getProgress($path)
     {
-        // Attempt to retrieve the progress from cache
+        //Retrieve the progress from cache.
         $progress = Cache::get("csv_progress_{$path}");
 
-        //Return values from cache as json.
-        if ($progress) {
+        //Return values from cache as JSON.
+        if($progress) {
             return response()->json($progress);
         } 
         else {
-            //Return default values if no progress is found in cache.
+            //Return default values if no data is found in cache.
             return response()->json([
                 'current' => 0,
                 'total' => 1,
